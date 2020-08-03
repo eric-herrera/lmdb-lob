@@ -115,7 +115,6 @@ class OrderList:
             with self.env.begin(write=True) as txn:
                 self.db_insert(txn, order)
                 order.in_db = True
-            print('SPECIAL INSERT',order)
         else:
             self.order_idx[order.id] = order
             self.add_pending(order, 'insert')
