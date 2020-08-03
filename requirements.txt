@@ -1,0 +1,2 @@
+sortedcontainers==2.2.2
+lmdb==0.98

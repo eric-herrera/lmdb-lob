@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+
+import argparse
+import lmdb
+import random
+from time import time, sleep
+
+from lob.orderbook import OrderBook, Quote
+
+LMDB_SIZE = (1024**2) * 400
+
+class OrderBookRunner():
+    def __init__(self):
+        parser = argparse.ArgumentParser(description='Test LOB')
+        parser.add_argument('-b', '--book', action='store_true',
+            help='Print book to stdout')
+
+        args = parser.parse_args()
+
+        self.env = lmdb.open('orderbook', max_dbs=2, map_size=LMDB_SIZE)
+        self.lob = OrderBook(self.env, 'trades')
+        self.last_pos = 0
+
+        if args.book:
+            self.lob.dump_book()
+            return
+
+        self.run()
+
+    # Nanoseconds µs
+    def time_ns(self):
+        return int(time() * 1000 * 1000)
+
+    def get_batch(self, size):
+        batch = []
+        with open('quotes') as f:
+            f.seek(self.last_pos)
+            for i in range(size):
+                line = f.readline().strip()
+                if line == '':
+                    break
+                self.last_pos = f.tell()
+                batch.append(line)
+        return batch
+
+    def run(self):
+        ttime = 0
+        order_cnt = 0
+        trade_cnt = 0
+
+        while True:
+            batch = self.get_batch(50000)
+            if not batch:
+                break
+            idadd = 0
+            for row in batch:
+                if idadd > 99:
+                    idadd = 0
+                idadd += 1
+
+                (id, side, qty, price) = row.split(',')
+                quote = Quote({
+                    'id'        : (self.time_ns() * 10) + idadd,
+                    'type'      : 'limit',
+                    'side'      : side,
+                    'qty'       : int(qty),
+                    'price'     : int(price),
+                    'account_id': random.randint(10000000,99999999)
+                })
+
+                start = time()
+
+                trades, orderInBook = self.lob.processOrder(quote)
+                self.lob.check_flush()
+
+                order_cnt += 1
+                trade_cnt += len(trades)
+
+                ttime += time() - start
+
+        start = time()
+        self.lob.flush()
+        ttime += time() - start
+
+        out = '%-10s: orders: %-8d trades: %-8d time: %.2fs orders/sec:%-8d' % (
+            'total', order_cnt, trade_cnt, ttime, order_cnt / ttime
+        )
+        print(out)
+
+
+if __name__ == '__main__':
+    OrderBookRunner()
+
